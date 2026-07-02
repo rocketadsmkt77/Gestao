@@ -828,3 +828,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
   font-size: 16px; cursor: pointer; padding: 6px; border-radius: 8px;
 }
 .sb-logout:hover { color: var(--red); background: rgba(248,113,113,.1); }
+
+/* ══ VENCIMENTO EDITÁVEL (Finanças) ══ */
+.venc-input {
+  background: var(--card2); border: 1px solid var(--border2);
+  border-radius: 8px; padding: 6px 9px;
+  color: var(--white); font: 500 12.5px 'Barlow', sans-serif;
+  outline: none; color-scheme: dark;
+}
+.venc-input:focus { border-color: var(--gold); }
+.venc-input.late { border-color: rgba(248,113,113,.55); color: var(--red); }

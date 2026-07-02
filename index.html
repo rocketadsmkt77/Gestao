@@ -6,7 +6,7 @@
   <title>Rocket Gestão — Painel de Clientes</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="painel.css?v=4">
+  <link rel="stylesheet" href="painel.css?v=7">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 </head>
@@ -42,8 +42,11 @@
       <button class="sb-nav-item active" data-view="client">
         <span class="ico">◉</span> Clientes
       </button>
-      <button class="sb-nav-item" data-view="financas">
+      <button class="sb-nav-item" data-view="financas" id="navFinancas" hidden>
         <span class="ico">◈</span> Finanças
+      </button>
+      <button class="sb-nav-item" data-view="contas" id="navContas" hidden>
+        <span class="ico">👤</span> Contas
       </button>
       <button class="sb-nav-item" data-view="equipe">
         <span class="ico">☰</span> Equipe
@@ -134,23 +137,19 @@
         <input type="text" id="cName" placeholder="Ex.: Imobiliária Horizonte">
       </label>
       <div class="row2">
-        <label>Segmento
-          <select id="cSeg">
+        <label>Segmento (o que o cliente é)
+          <input type="text" id="cSeg" list="segList" placeholder="Ex.: Barbearia, Clínica, Loja…">
+          <datalist id="segList">
             <option>Imobiliário</option>
             <option>Automotivo</option>
             <option>Saúde</option>
             <option>Varejo</option>
             <option>Alimentação</option>
             <option>Serviços</option>
-            <option>Outro</option>
-          </select>
+          </datalist>
         </label>
-        <label>Plano
-          <select id="cPlan">
-            <option>Plano Start</option>
-            <option selected>Plano Growth</option>
-            <option>Plano Turbo</option>
-          </select>
+        <label>Mensalidade (R$)
+          <input type="number" id="cFee" min="0" step="50" placeholder="Ex.: 1500">
         </label>
       </div>
       <div class="row2">
@@ -197,6 +196,30 @@
     <footer>
       <button class="btn ghost" data-close>Cancelar</button>
       <button class="btn primary" id="transRun">✦ Processar com IA</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ══ MODAL: solicitar conexão de conta ══ -->
+<div class="modal-backdrop" id="connModal" hidden>
+  <div class="modal">
+    <header>
+      <h3 id="connTitle">Conectar conta</h3>
+      <button class="modal-x" data-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <p class="hint" id="connHint"></p>
+      <label id="connContaLabel">Conta
+        <input type="text" id="connConta" placeholder="">
+      </label>
+      <label>Nome e WhatsApp do responsável pela conta
+        <input type="text" id="connResp" placeholder="Ex.: João — (11) 99999-0000">
+      </label>
+      <p class="hint">A equipe Rocket Ads faz a conexão pela <b>API oficial</b> e avisa quando estiver no ar — normalmente em até 2 dias úteis.</p>
+    </div>
+    <footer>
+      <button class="btn ghost" data-close>Cancelar</button>
+      <button class="btn primary" id="connSend">📨 Enviar solicitação</button>
     </footer>
   </div>
 </div>
@@ -266,6 +289,6 @@
 
 <div class="toast-wrap" id="toasts"></div>
 
-<script src="painel.js?v=5"></script>
+<script src="painel.js?v=8"></script>
 </body>
 </html>

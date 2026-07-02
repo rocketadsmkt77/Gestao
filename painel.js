@@ -144,7 +144,6 @@ function renderHeader() {
       <div class="ch-avatar" style="background:linear-gradient(135deg, ${c.color}, ${c.color}99)">${esc(c.short)}</div>
       <div>
         <div class="ch-name">${esc(c.name)}
-          <span class="badge violet">${esc(c.plan)}</span>
           <span class="badge ${c.status}">${esc(c.statusLabel)}</span>
           ${payInfo(c).overdue ? '<span class="badge red">💰 Pagamento pendente</span>' : ''}
         </div>
@@ -377,14 +376,8 @@ function renderWhatsapp(root) {
   root.appendChild(head);
 
   if (!all.length) {
-    const box = el('div', 'empty', `<span class="e-ico">💬</span>
-      <b>Nenhuma conversa espelhada ainda</b>
-      Conecte o número do WhatsApp Business deste cliente para espelhar aqui, em tempo real,
-      todas as conversas dos vendedores com os leads — com origem do anúncio e funil.<br><br>
-      <button class="btn primary small" id="connWa">Conectar WhatsApp Business</button>`);
-    root.appendChild(box);
-    box.querySelector('#connWa').onclick = () =>
-      toast('Solicitação registrada — a conexão usa a API oficial da Meta (Cloud API).');
+    renderConnect(root, 'wa',
+      'Conecte o número do WhatsApp Business deste cliente para espelhar aqui, em tempo real, todas as conversas dos vendedores com os leads — com origem do anúncio e funil.');
     return;
   }
 
@@ -516,33 +509,116 @@ function renderWhatsapp(root) {
   input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
 }
 
-/* ── ADS / INTELIGÊNCIA (aguardando conexão) ── */
+/* ── CONEXÕES DE CONTA (WhatsApp / Meta / Google) ──
+   A conexão real usa as APIs oficiais e é feita pela
+   equipe Rocket Ads. Aqui o cliente solicita: os dados
+   vão por e-mail e a aba fica "em implantação". ── */
 
-function renderConnect(root, opts) {
-  const box = el('div', 'empty', `<span class="e-ico">${opts.ico}</span>
-    <b>${opts.title}</b>
-    ${opts.text}<br><br>
-    <button class="btn primary small" id="connBtn">${opts.cta}</button>`);
+const CONN_INFO = {
+  wa: {
+    label: 'WhatsApp Business', ico: '💬',
+    contaLabel: 'Número do WhatsApp Business',
+    placeholder: 'Ex.: (11) 99999-0000',
+    hint: 'Informe o número usado no atendimento. O espelhamento usa a API oficial da Meta (Cloud API) — as conversas continuam no celular normalmente.',
+  },
+  meta: {
+    label: 'Meta Ads', ico: 'Ⓜ',
+    contaLabel: 'Conta de anúncios (nome ou ID)',
+    placeholder: 'Ex.: act_123456789 ou nome da conta',
+    hint: 'Informe a conta de anúncios do Facebook/Instagram. O espelho usa a Meta Marketing API.',
+  },
+  google: {
+    label: 'Google Ads', ico: 'G',
+    contaLabel: 'ID da conta Google Ads',
+    placeholder: 'Ex.: 123-456-7890',
+    hint: 'Informe o ID que aparece no topo do Google Ads. O espelho usa a Google Ads API.',
+  },
+};
+
+let connService = null;
+
+function openConnModal(service) {
+  connService = service;
+  const info = CONN_INFO[service];
+  $('#connTitle').textContent = `Conectar ${info.label}`;
+  $('#connHint').textContent = info.hint;
+  $('#connContaLabel').firstChild.textContent = info.contaLabel;
+  $('#connConta').placeholder = info.placeholder;
+  $('#connConta').value = '';
+  $('#connResp').value = '';
+  openModal('#connModal');
+  $('#connConta').focus();
+}
+
+async function enviarConexao(service, conta, resp) {
+  const c = cli();
+  const info = CONN_INFO[service];
+  const r = await fetch('https://formsubmit.co/ajax/' + ADMIN_EMAIL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({
+      _subject: 'Rocket Gestao - Conectar ' + info.label + ' - ' + c.name,
+      _template: 'table',
+      servico: info.label,
+      cliente: c.name,
+      conta_informada: conta,
+      responsavel: resp,
+      solicitado_por: $('#userName').textContent + ' (' + ($('#userRole').textContent || '') + ')',
+      message: 'SOLICITACAO DE CONEXAO - ' + info.label.toUpperCase() + '\n\n'
+        + 'Cliente: ' + c.name + '\n'
+        + 'Conta: ' + conta + '\n'
+        + 'Responsavel: ' + resp + '\n\n'
+        + 'Configure a integracao oficial e avise o cliente quando estiver no ar.',
+    }),
+  });
+  if (!r.ok) throw new Error('falha no envio');
+}
+
+$('#connSend').onclick = async () => {
+  const conta = $('#connConta').value.trim();
+  const resp = $('#connResp').value.trim();
+  if (!conta) { $('#connConta').focus(); return; }
+  const c = cli();
+  if (!c || !connService) return;
+  c.conn = c.conn || {};
+  c.conn[connService] = { status: 'pendente', conta, resp, data: hoje() };
+  save();
+  closeModal('#connModal');
+  renderContent();
+  toast('Solicitação enviada — a equipe Rocket Ads vai configurar a conexão 🚀');
+  try { await enviarConexao(connService, conta, resp || '—'); }
+  catch (e) { toast('Não foi possível enviar por e-mail — reenvie quando estiver com internet.'); }
+};
+
+function renderConnect(root, service, text) {
+  const info = CONN_INFO[service];
+  const req = (cli().conn || {})[service];
+  let box;
+  if (req) {
+    box = el('div', 'empty', `<span class="e-ico">⏳</span>
+      <b>Conexão em implantação</b>
+      Solicitação enviada em ${fmtVenc(req.data)} para a conta <b>${esc(req.conta)}</b>.<br>
+      A equipe Rocket Ads está configurando a integração oficial do ${info.label} — os dados aparecem aqui assim que a conexão estiver no ar.<br><br>
+      <button class="btn ghost small" id="connBtn">↺ Reenviar solicitação</button>`);
+  } else {
+    box = el('div', 'empty', `<span class="e-ico">${info.ico}</span>
+      <b>${info.label} não conectado</b>
+      ${text}<br><br>
+      <button class="btn primary small" id="connBtn">Conectar ${info.label}</button>`);
+  }
   box.style.marginTop = '30px';
   root.appendChild(box);
-  box.querySelector('#connBtn').onclick = () =>
-    toast('Solicitação registrada — a conexão usa a API oficial e é feita pela equipe de implantação.');
+  box.querySelector('#connBtn').onclick = () => openConnModal(service);
 }
 
 function renderMeta(root) {
-  renderConnect(root, {
-    ico: 'Ⓜ', cta: 'Conectar Meta Ads',
-    title: 'Conta Meta Ads não conectada',
-    text: 'Conecte a conta de anúncios deste cliente para espelhar aqui as campanhas, o investimento, os leads, CPL, CTR e CPM — direto da Meta Marketing API, sem depender de prints.',
-  });
+  renderConnect(root, 'meta',
+    'Conecte a conta de anúncios deste cliente para espelhar aqui as campanhas, o investimento, os leads, CPL, CTR e CPM — direto da Meta Marketing API, sem depender de prints.');
 }
 
 function renderGoogle(root) {
-  renderConnect(root, {
-    ico: 'G', cta: 'Conectar Google Ads',
-    title: 'Conta Google Ads não conectada',
-    text: 'Conecte a conta do Google Ads deste cliente para espelhar campanhas, conversões, CPC e CPA com métricas precisas da Google Ads API.',
-  });
+  renderConnect(root, 'google',
+    'Conecte a conta do Google Ads deste cliente para espelhar campanhas, conversões, CPC e CPA com métricas precisas da Google Ads API.');
 }
 
 function renderIntel(root) {
@@ -552,11 +628,16 @@ function renderIntel(root) {
     <p>A IA cruza os dados do Meta Ads, Google Ads e WhatsApp para separar os melhores anúncios e os
     criativos vencedores — e transforma isso em recomendações práticas para o próximo ciclo.</p>`;
   root.appendChild(hero);
-  renderConnect(root, {
-    ico: '✦', cta: 'Conectar contas de anúncio',
-    title: 'Aguardando dados das contas',
-    text: 'Assim que as contas de anúncio e o WhatsApp estiverem conectados, a IA monta o ranking de criativos vencedores, gera insights e sugere os próximos testes.',
-  });
+
+  const conns = cli().conn || {};
+  const pend = ['wa', 'meta', 'google'].filter(s => conns[s]);
+  const box = el('div', 'empty');
+  box.style.marginTop = '30px';
+  box.innerHTML = `<span class="e-ico">✦</span>
+    <b>Aguardando dados das contas</b>
+    A inteligência é gerada a partir das contas conectadas (WhatsApp, Meta Ads e Google Ads).
+    ${pend.length ? `<br>Conexões em implantação: <b>${pend.map(s => CONN_INFO[s].label).join(', ')}</b>.` : '<br>Conecte-as nas abas ao lado para ativar o ranking de criativos e os insights.'}`;
+  root.appendChild(box);
 }
 
 /* ── KPI helper ────────────────────────── */
@@ -596,7 +677,7 @@ function renderOverview(root) {
   alerts.innerHTML = `
     <h3>🔔 Alertas</h3>
     ${atrasados.length
-      ? atrasados.map(c => `<div class="alert-item"><span class="a-ico">💰</span><span><b>${esc(c.name)}</b>: pagamento pendente desde ${fmtVenc(c.venc)} (${brl(PLAN_PRICE[c.plan] || 2000)}). Confirme em Finanças ao receber.</span></div>`).join('')
+      ? atrasados.map(c => `<div class="alert-item"><span class="a-ico">💰</span><span><b>${esc(c.name)}</b>: pagamento pendente desde ${fmtVenc(c.venc)} (${brl(feeOf(c))}). Confirme em Finanças ao receber.</span></div>`).join('')
       : '<div class="alert-item"><span class="a-ico">✅</span><span>Nenhum alerta no momento. Pagamentos em dia aparecem aqui quando vencerem.</span></div>'}`;
   root.appendChild(alerts);
 
@@ -604,12 +685,12 @@ function renderOverview(root) {
   tbl.innerHTML = `
     <h3>Clientes</h3>
     <div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>Cliente</th><th>Segmento</th><th>Plano</th><th>Status</th><th class="num">Tarefas abertas</th><th class="num">Reuniões</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Segmento</th><th class="num">Mensalidade</th><th>Status</th><th class="num">Tarefas abertas</th><th class="num">Reuniões</th></tr></thead>
       <tbody>
         ${DB.clients.map(c => `<tr class="row-client" data-id="${c.id}" style="cursor:pointer">
           <td class="name"><span class="status-dot on"></span>${esc(c.name)}</td>
           <td>${esc(c.seg)}</td>
-          <td>${esc(c.plan)}</td>
+          <td class="num">${brl(feeOf(c))}</td>
           <td><span class="badge ${c.status}">${esc(c.statusLabel)}</span></td>
           <td class="num">${(DB.tasks[c.id] || []).filter(t => t.col !== 'done').length}</td>
           <td class="num">${(DB.meetings[c.id] || []).length}</td>
@@ -624,7 +705,11 @@ function renderOverview(root) {
 
 /* ── FINANÇAS / PAGAMENTOS ─────────────── */
 
+// preços antigos, mantidos só para clientes criados antes da mensalidade livre
 const PLAN_PRICE = { 'Plano Start': 1550, 'Plano Growth': 2400, 'Plano Turbo': 4500 };
+function feeOf(c) {
+  return typeof c.fee === 'number' && !isNaN(c.fee) ? c.fee : (PLAN_PRICE[c.plan] || 0);
+}
 
 function payInfo(c) {
   if (!c.venc) return { overdue: false, label: '—', cls: 'blue' };
@@ -659,13 +744,13 @@ function renderFinancas(root) {
   if (!DB.clients.length) {
     root.appendChild(el('div', 'empty', `<span class="e-ico">◈</span>
       <b>Nenhum contrato ainda</b>
-      Cadastre clientes com seus planos e vencimentos — o MRR, os pagamentos pendentes e a lista de contratos aparecem aqui automaticamente.`));
+      Cadastre clientes com mensalidade e vencimento — o MRR, os pagamentos pendentes e a lista de contratos aparecem aqui automaticamente.`));
     return;
   }
 
-  const mrr = DB.clients.reduce((s, c) => s + (PLAN_PRICE[c.plan] || 2000), 0);
+  const mrr = DB.clients.reduce((s, c) => s + feeOf(c), 0);
   const pend = DB.clients.filter(c => payInfo(c).overdue);
-  const valorPend = pend.reduce((s, c) => s + (PLAN_PRICE[c.plan] || 2000), 0);
+  const valorPend = pend.reduce((s, c) => s + feeOf(c), 0);
 
   const kpis = el('div', 'grid g4');
   kpis.innerHTML = `
@@ -679,15 +764,15 @@ function renderFinancas(root) {
   tbl.innerHTML = `
     <h3>Contratos e pagamentos</h3>
     <div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>Cliente</th><th>Plano</th><th class="num">Mensalidade</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Segmento</th><th class="num">Mensalidade</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead>
       <tbody>
         ${DB.clients.map(c => {
           const p = payInfo(c);
           return `<tr>
           <td class="name">${esc(c.name)}</td>
-          <td>${esc(c.plan)}</td>
-          <td class="num">${brl(PLAN_PRICE[c.plan] || 2000)}</td>
-          <td class="${p.overdue ? 'neg' : ''}">${fmtVenc(c.venc)}</td>
+          <td>${esc(c.seg)}</td>
+          <td class="num">${brl(feeOf(c))}</td>
+          <td><input type="date" class="venc-input ${p.overdue ? 'late' : ''}" data-id="${c.id}" value="${c.venc || ''}" title="Escolher dia do vencimento"></td>
           <td><span class="badge ${p.cls}">${p.label}</span></td>
           <td><button class="btn ghost small pay-btn" data-id="${c.id}">✓ Confirmar pagamento</button></td>
         </tr>`; }).join('')}
@@ -695,6 +780,13 @@ function renderFinancas(root) {
     </table></div>`;
   root.appendChild(tbl);
   tbl.querySelectorAll('.pay-btn').forEach(b => b.onclick = () => confirmarPagamento(b.dataset.id));
+  tbl.querySelectorAll('.venc-input').forEach(inp => inp.onchange = () => {
+    const c = DB.clients.find(x => x.id === inp.dataset.id);
+    if (!c || !inp.value) return;
+    c.venc = inp.value;
+    save(); renderContent();
+    toast(`Vencimento de ${c.name} alterado para ${fmtVenc(c.venc)}`);
+  });
 }
 
 /* ── EQUIPE ────────────────────────────── */
@@ -730,13 +822,65 @@ function renderEquipe(root) {
   root.appendChild(grid);
 }
 
+/* ── CONTAS DE ACESSO (somente admin) ──── */
+
+function renderContas(root) {
+  root.innerHTML = `
+    <div class="page-title">Contas de acesso</div>
+    <div class="page-sub">Usuários deste painel — somente o administrador (${ADMIN_EMAIL}) vê esta área</div>`;
+
+  const users = loadUsers();
+  if (!users.length) {
+    root.appendChild(el('div', 'empty', `<span class="e-ico">👤</span>
+      <b>Nenhuma conta criada neste navegador</b>
+      Quando alguém criar uma conta pela tela de entrada, ela aparece aqui para você liberar ou bloquear.`));
+    return;
+  }
+
+  const tbl = el('div', 'card');
+  tbl.innerHTML = `
+    <h3>Usuários</h3>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Nome</th><th>Empresa</th><th>E-mail</th><th>Situação</th><th>Código</th><th>Ação</th></tr></thead>
+      <tbody>
+        ${users.map(u => `<tr>
+          <td class="name">${esc(u.nome)}</td>
+          <td>${esc(u.empresa || '—')}</td>
+          <td>${esc(u.email)}</td>
+          <td>${u.blocked
+            ? '<span class="badge red">🔒 Bloqueada</span>'
+            : u.active
+              ? '<span class="badge green">Ativa</span>'
+              : '<span class="badge gold">Aguardando liberação</span>'}</td>
+          <td>${u.active ? '—' : `<span class="badge violet">${esc(u.code)}</span>`}</td>
+          <td><button class="btn ${u.blocked ? 'ghost' : 'danger'} small user-block" data-email="${esc(u.email)}">${u.blocked ? '🔓 Liberar' : '🔒 Bloquear'}</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+    <p class="hint" style="margin-top:12px">⚠️ As contas ficam salvas no navegador em que foram criadas. Contas criadas em outros computadores não aparecem aqui — a gestão central de todos os acessos exige o servidor (próxima etapa do produto). O bloqueio acima vale para este navegador.</p>`;
+  root.appendChild(tbl);
+
+  tbl.querySelectorAll('.user-block').forEach(b => b.onclick = () => {
+    const users2 = loadUsers();
+    const u = users2.find(x => x.email === b.dataset.email);
+    if (!u) return;
+    u.blocked = !u.blocked;
+    saveUsers(users2);
+    renderContent();
+    toast(u.blocked ? `🔒 Acesso de ${u.nome} bloqueado` : `🔓 Acesso de ${u.nome} liberado`);
+  });
+}
+
 /* ── ROTEADOR DE CONTEÚDO ──────────────── */
 
 function renderContent() {
   const root = $('#content');
   root.innerHTML = '';
+  if (state.view === 'financas' && !isAdmin()) state.view = 'client';
+  if (state.view === 'contas' && !isAdmin())   state.view = 'client';
   if (state.view === 'overview')  return renderOverview(root);
   if (state.view === 'financas')  return renderFinancas(root);
+  if (state.view === 'contas')    return renderContas(root);
   if (state.view === 'equipe')    return renderEquipe(root);
 
   if (!cli()) { renderWelcome(root); return; }
@@ -798,8 +942,8 @@ function openClientModal(client) {
   state.editingClient = client ? client.id : null;
   $('#clientModalTitle').textContent = client ? 'Editar cliente' : 'Novo cliente';
   $('#cName').value = client ? client.name : '';
-  $('#cSeg').value = client ? client.seg : 'Imobiliário';
-  $('#cPlan').value = client ? client.plan : 'Plano Growth';
+  $('#cSeg').value = client ? client.seg : '';
+  $('#cFee').value = client && feeOf(client) ? feeOf(client) : '';
   $('#cEmail').value = client ? client.email : '';
   $('#cResp').value = client ? client.resp : '';
   $('#cVenc').value = client && client.venc ? client.venc
@@ -816,8 +960,8 @@ $('#clientSave').onclick = () => {
   if (!name) { $('#cName').focus(); return; }
   const data = {
     name,
-    seg: $('#cSeg').value,
-    plan: $('#cPlan').value,
+    seg: $('#cSeg').value.trim() || 'Outro',
+    fee: parseFloat($('#cFee').value) || 0,
     email: $('#cEmail').value.trim() || '—',
     resp: $('#cResp').value.trim() || 'Equipe',
     venc: $('#cVenc').value || new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
@@ -916,10 +1060,15 @@ document.addEventListener('keydown', e => {
    cliente → ele digita e o acesso abre.
    ═══════════════════════════════════════════ */
 
-const ADMIN_EMAIL = 'rocketadsmkt77@gmail.com'; // recebe as solicitações de liberação
+const ADMIN_EMAIL = 'rocketadsmkt77@gmail.com'; // conta do administrador (embutida no código — funciona em qualquer máquina)
+const ADMIN_PASS  = '180207Ab';               // ⚠️ TROQUE esta senha antes de publicar
 const MASTER_CODE = 'RG-MASTER-7712';           // código mestre — só a equipe Rocket conhece
 const USERS_KEY = 'rocket_gestao_users_v1';
 const SESSION_KEY = 'rocket_gestao_session_v1';
+
+let currentUser = null;
+const isAdmin = () => !!(currentUser && currentUser.email === ADMIN_EMAIL);
+const adminUser = () => ({ nome: 'Rocket Ads', empresa: 'Administrador', email: ADMIN_EMAIL, active: true });
 
 function loadUsers() { try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; } catch (e) { return []; } }
 function saveUsers(u) { try { localStorage.setItem(USERS_KEY, JSON.stringify(u)); } catch (e) {} }
@@ -936,11 +1085,16 @@ function showPane(p) {
 document.querySelectorAll('#authTabs button').forEach(b => b.onclick = () => showPane(b.dataset.pane));
 
 function enterApp(user) {
+  currentUser = user;
   try { localStorage.setItem(SESSION_KEY, user.email); } catch (e) {}
   $('#authScreen').hidden = true;
   $('#userName').textContent = user.nome;
   $('#userRole').textContent = user.empresa || 'Administrador';
   $('#userAvatar').textContent = initials(user.nome);
+  // Finanças e Contas: somente o administrador
+  $('#navFinancas').hidden = !isAdmin();
+  $('#navContas').hidden = !isAdmin();
+  if (!isAdmin() && ['financas', 'contas'].includes(state.view)) state.view = 'client';
   renderAll();
 }
 
@@ -1008,8 +1162,11 @@ $('#loginBtn').onclick = () => {
   const email = $('#loginEmail').value.trim().toLowerCase();
   const pass = $('#loginPass').value;
   const msg = $('#loginMsg');
+  // conta do administrador — embutida no código, funciona em qualquer máquina
+  if (email === ADMIN_EMAIL && pass === ADMIN_PASS) { enterApp(adminUser()); return; }
   const user = loadUsers().find(u => u.email === email);
   if (!user || user.pass !== hashPass(pass)) { msg.textContent = 'E-mail ou senha incorretos.'; return; }
+  if (user.blocked) { msg.textContent = 'Acesso suspenso. Fale com a equipe Rocket Ads para regularizar.'; return; }
   if (!user.active) { showPending(user); return; }
   enterApp(user);
 };
@@ -1045,7 +1202,9 @@ $('#logoutBtn').onclick = () => {
 (function initAuth() {
   let sessionEmail = null;
   try { sessionEmail = localStorage.getItem(SESSION_KEY); } catch (e) {}
-  const user = sessionEmail ? loadUsers().find(u => u.email === sessionEmail && u.active) : null;
+  if (sessionEmail === ADMIN_EMAIL) { enterApp(adminUser()); return; }
+  const user = sessionEmail ? loadUsers().find(u => u.email === sessionEmail && u.active && !u.blocked) : null;
   if (user) enterApp(user);
   else $('#authScreen').hidden = false;
 })();
+
