@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rocket Gestão — Painel de Clientes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="painel.css?v=4">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ══ SIDEBAR ══ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-logo">
+      <img src="logo.png" alt="Rocket Gestão">
+      <span>rocket<b>gestão</b></span>
+    </div>
+
+    <div class="sb-search">
+      <input type="text" id="globalSearch" placeholder="Buscar cliente ou tarefa…">
+      <kbd>/</kbd>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-section-title">
+        <span>Clientes</span>
+        <span class="sb-count" id="clientCount"></span>
+      </div>
+      <nav class="sb-clients" id="clientList"></nav>
+      <button class="sb-add" id="addClient">+ Novo cliente</button>
+    </div>
+
+    <div class="sb-bottom">
+      <button class="sb-nav-item" data-view="overview">
+        <span class="ico">◫</span> Visão geral
+      </button>
+      <button class="sb-nav-item active" data-view="client">
+        <span class="ico">◉</span> Clientes
+      </button>
+      <button class="sb-nav-item" data-view="financas">
+        <span class="ico">◈</span> Finanças
+      </button>
+      <button class="sb-nav-item" data-view="equipe">
+        <span class="ico">☰</span> Equipe
+      </button>
+    </div>
+
+    <div class="sb-user">
+      <div class="sb-avatar" id="userAvatar">?</div>
+      <div style="flex:1;min-width:0">
+        <strong id="userName">—</strong>
+        <small id="userRole">—</small>
+      </div>
+      <button class="sb-logout" id="logoutBtn" title="Sair da conta">⏻</button>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN ══ -->
+  <main class="main">
+    <header class="client-header" id="clientHeader"></header>
+    <nav class="tabs" id="tabBar"></nav>
+    <section class="content" id="content"></section>
+  </main>
+</div>
+
+<!-- ══ MODAL: nova tarefa ══ -->
+<div class="modal-backdrop" id="taskModal" hidden>
+  <div class="modal">
+    <header>
+      <h3 id="taskModalTitle">Nova tarefa</h3>
+      <button class="modal-x" data-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <label>Título
+        <input type="text" id="tTitle" placeholder="Ex.: Reels — Tour do apartamento">
+      </label>
+      <div class="row2">
+        <label>Tipo
+          <select id="tType">
+            <option>Reels</option>
+            <option>Post Feed</option>
+            <option>Stories</option>
+            <option>Captação</option>
+            <option>Meta ADS</option>
+            <option>Google ADS</option>
+            <option>Relatório</option>
+            <option>Reunião</option>
+            <option>Outra</option>
+          </select>
+        </label>
+        <label>Prioridade
+          <select id="tPriority">
+            <option value="normal">Normal</option>
+            <option value="alta">Alta</option>
+            <option value="urgente">Urgente</option>
+          </select>
+        </label>
+      </div>
+      <div class="row2">
+        <label>Data
+          <input type="date" id="tDate">
+        </label>
+        <label>Coluna
+          <select id="tColumn">
+            <option value="fixos">Entregáveis fixos</option>
+            <option value="todo" selected>A fazer</option>
+            <option value="doing">Em execução</option>
+            <option value="done">Concluído</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <footer>
+      <button class="btn ghost" data-close>Cancelar</button>
+      <button class="btn primary" id="taskSave">Salvar tarefa</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ══ MODAL: cliente (novo / editar) ══ -->
+<div class="modal-backdrop" id="clientModal" hidden>
+  <div class="modal">
+    <header>
+      <h3 id="clientModalTitle">Novo cliente</h3>
+      <button class="modal-x" data-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <label>Nome da empresa
+        <input type="text" id="cName" placeholder="Ex.: Imobiliária Horizonte">
+      </label>
+      <div class="row2">
+        <label>Segmento
+          <select id="cSeg">
+            <option>Imobiliário</option>
+            <option>Automotivo</option>
+            <option>Saúde</option>
+            <option>Varejo</option>
+            <option>Alimentação</option>
+            <option>Serviços</option>
+            <option>Outro</option>
+          </select>
+        </label>
+        <label>Plano
+          <select id="cPlan">
+            <option>Plano Start</option>
+            <option selected>Plano Growth</option>
+            <option>Plano Turbo</option>
+          </select>
+        </label>
+      </div>
+      <div class="row2">
+        <label>E-mail de contato
+          <input type="email" id="cEmail" placeholder="contato@empresa.com.br">
+        </label>
+        <label>Responsável interno
+          <input type="text" id="cResp" placeholder="Ex.: Gabriel">
+        </label>
+      </div>
+      <label>Próximo vencimento do pagamento
+        <input type="date" id="cVenc">
+      </label>
+      <p class="hint">Ao passar da data, o contrato fica <b>Pendente</b> automaticamente. Confirme o recebimento na aba <b>Finanças</b> para voltar a <b>Pago</b>.</p>
+    </div>
+    <footer>
+      <button class="btn danger" id="clientDelete" hidden>🗑 Excluir cliente</button>
+      <button class="btn ghost" data-close>Cancelar</button>
+      <button class="btn primary" id="clientSave">Salvar cliente</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ══ MODAL: transcrição ══ -->
+<div class="modal-backdrop" id="transModal" hidden>
+  <div class="modal">
+    <header>
+      <h3>Nova reunião / Transcrever</h3>
+      <button class="modal-x" data-close>&times;</button>
+    </header>
+    <div class="modal-body">
+      <p class="hint">Cole a transcrição ou as anotações da reunião. A IA gera resumo executivo, decisões, próximos passos — e cria as tarefas automaticamente no Kanban.</p>
+      <label>Título da reunião
+        <input type="text" id="transTitle" placeholder="Ex.: Alinhamento mensal">
+      </label>
+      <label>Transcrição / anotações
+        <textarea id="transText" rows="6" placeholder="Cole aqui a transcrição da reunião…"></textarea>
+      </label>
+      <div class="upload-fake">
+        <span>🎙️ Enviar áudio (.mp3, .m4a, .wav)</span>
+        <small>Integração com API de transcrição — em produção</small>
+      </div>
+    </div>
+    <footer>
+      <button class="btn ghost" data-close>Cancelar</button>
+      <button class="btn primary" id="transRun">✦ Processar com IA</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ══ TELA DE ACESSO (login / criar conta / liberação) ══ -->
+<div class="auth" id="authScreen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="logo.png" alt="Rocket Gestão">
+      <span>rocket<b>gestão</b></span>
+    </div>
+
+    <div class="auth-tabs" id="authTabs">
+      <button class="active" data-pane="login">Entrar</button>
+      <button data-pane="signup">Criar conta</button>
+    </div>
+
+    <!-- Entrar -->
+    <div class="auth-pane" id="pane-login">
+      <label>E-mail
+        <input type="email" id="loginEmail" placeholder="voce@suaempresa.com.br">
+      </label>
+      <label>Senha
+        <input type="password" id="loginPass" placeholder="••••••••">
+      </label>
+      <button class="btn primary auth-btn" id="loginBtn">Entrar no painel</button>
+      <p class="auth-msg" id="loginMsg"></p>
+    </div>
+
+    <!-- Criar conta -->
+    <div class="auth-pane" id="pane-signup" hidden>
+      <label>Seu nome
+        <input type="text" id="suNome" placeholder="Ex.: João Silva">
+      </label>
+      <label>Nome da empresa
+        <input type="text" id="suEmpresa" placeholder="Ex.: Imobiliária Horizonte">
+      </label>
+      <label>E-mail
+        <input type="email" id="suEmail" placeholder="voce@suaempresa.com.br">
+      </label>
+      <label>Senha (mínimo 6 caracteres)
+        <input type="password" id="suPass" placeholder="••••••••">
+      </label>
+      <button class="btn primary auth-btn" id="signupBtn">Criar conta</button>
+      <p class="auth-msg" id="signupMsg"></p>
+    </div>
+
+    <!-- Aguardando liberação -->
+    <div class="auth-pane" id="pane-pending" hidden>
+      <div class="auth-pending-ico">🔐</div>
+      <h3 class="auth-pending-title">Conta criada — aguardando liberação</h3>
+      <p class="auth-pending-text" id="pendingText">
+        Sua solicitação de acesso foi enviada à equipe Rocket Ads.
+        Assim que for aprovada, você receberá o <b>código de liberação</b> — digite-o abaixo para entrar.
+      </p>
+      <label>Código de liberação
+        <input type="text" id="unlockCode" placeholder="Ex.: RG-000000" style="text-transform:uppercase">
+      </label>
+      <button class="btn primary auth-btn" id="unlockBtn">Liberar acesso</button>
+      <p class="auth-msg" id="unlockMsg"></p>
+      <a class="auth-alt" id="pendingMail" href="#" target="_blank" rel="noopener">✉ Falar com o suporte</a>
+    </div>
+
+    <p class="auth-foot">Rocket Gestão · acesso liberado pela equipe Rocket Ads</p>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="painel.js?v=4"></script>
+</body>
+</html>
