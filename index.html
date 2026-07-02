@@ -83,18 +83,21 @@
         <input type="text" id="tTitle" placeholder="Ex.: Reels — Tour do apartamento">
       </label>
       <div class="row2">
-        <label>Tipo
-          <select id="tType">
+        <label>Tipo (escreva o que quiser)
+          <input type="text" id="tType" list="tipoList" placeholder="Ex.: Orçamento, Entrega, Reels…">
+          <datalist id="tipoList">
+            <option>Reunião</option>
+            <option>Orçamento</option>
+            <option>Entrega</option>
+            <option>Atendimento</option>
+            <option>Relatório</option>
             <option>Reels</option>
             <option>Post Feed</option>
             <option>Stories</option>
             <option>Captação</option>
             <option>Meta ADS</option>
             <option>Google ADS</option>
-            <option>Relatório</option>
-            <option>Reunião</option>
-            <option>Outra</option>
-          </select>
+          </datalist>
         </label>
         <label>Prioridade
           <select id="tPriority">
@@ -293,6 +296,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="painel.js?v=11"></script>
+<script src="painel.js?v=12"></script>
 </body>
 </html>

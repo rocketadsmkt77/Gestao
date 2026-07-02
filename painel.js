@@ -978,6 +978,7 @@ document.querySelectorAll('.modal-backdrop').forEach(m =>
 /* nova tarefa */
 function openTaskModal() {
   $('#tTitle').value = '';
+  $('#tType').value = '';
   $('#tDate').value = hoje();
   openModal('#taskModal');
   $('#tTitle').focus();
@@ -989,7 +990,7 @@ $('#taskSave').onclick = () => {
   if (!cli()) { closeModal('#taskModal'); toast('Cadastre um cliente primeiro'); return; }
   tasks().push({
     id: uid(), title,
-    type: $('#tType').value,
+    type: $('#tType').value.trim() || 'Tarefa',
     pri: $('#tPriority').value,
     date: $('#tDate').value,
     col: $('#tColumn').value,
