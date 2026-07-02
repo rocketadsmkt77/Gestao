@@ -18,7 +18,12 @@ const STARTER_TASKS = () => ([
   { id: uid(), title: 'Configurar contas de anúncio',     type: 'Meta ADS', pri: 'normal', date: hoje(), col: 'todo' },
 ]);
 
-/* ── BANCO LOCAL (localStorage) ────────── */
+/* ── BANCO DO PAINEL ─────────────────────
+   Cada conta tem seu painel salvo na nuvem
+   (Firestore, doc paineis/{uid}) — quem loga
+   vê só os próprios clientes, de qualquer
+   máquina. O localStorage vira só um cache
+   offline por conta. ── */
 
 const DB_KEY = 'rocket_gestao_db_v1';
 
@@ -26,20 +31,53 @@ function seedDB() {
   return { clients: [], tasks: {}, meetings: {}, convos: {} };
 }
 
-function loadDB() {
+function lerLocal(key) {
   try {
-    const raw = localStorage.getItem(DB_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
-      const db = JSON.parse(raw);
-      if (db && Array.isArray(db.clients)) return db;
+      const d = JSON.parse(raw);
+      if (d && Array.isArray(d.clients)) return d;
     }
   } catch (e) { /* armazenamento indisponível */ }
-  return seedDB();
+  return null;
 }
 
-let DB = loadDB();
+let DB = seedDB();
+let saveTimer = null;
+
 function save() {
-  try { localStorage.setItem(DB_KEY, JSON.stringify(DB)); } catch (e) {}
+  if (!currentUser || !currentUser.uid) return;
+  try { localStorage.setItem(DB_KEY + '_' + currentUser.uid, JSON.stringify(DB)); } catch (e) {}
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    db.collection('paineis').doc(currentUser.uid).set(DB)
+      .catch(() => toast('⚠️ Sem conexão — as últimas alterações serão salvas quando a internet voltar.'));
+  }, 600);
+}
+
+async function carregarPainel(uid) {
+  let carregado = null;
+  try {
+    const snap = await db.collection('paineis').doc(uid).get();
+    if (snap.exists) {
+      carregado = snap.data();
+    } else {
+      // primeira entrada desta conta: aproveita dados antigos deste navegador, se existirem
+      carregado = lerLocal(DB_KEY + '_' + uid) || lerLocal(DB_KEY) || seedDB();
+      try { localStorage.removeItem(DB_KEY); } catch (e) {}
+      await db.collection('paineis').doc(uid).set(carregado);
+    }
+  } catch (e) {
+    // offline: usa o cache local desta conta
+    carregado = lerLocal(DB_KEY + '_' + uid) || seedDB();
+  }
+  DB = carregado;
+  DB.clients = DB.clients || [];
+  DB.tasks = DB.tasks || {};
+  DB.meetings = DB.meetings || {};
+  DB.convos = DB.convos || {};
+  state.clientId = DB.clients.length ? DB.clients[0].id : null;
+  state.view = ['financas', 'contas'].includes(state.view) ? state.view : 'client';
 }
 
 /* ── ESTADO DA TELA ────────────────────── */
@@ -824,15 +862,33 @@ function renderEquipe(root) {
 
 /* ── CONTAS DE ACESSO (somente admin) ──── */
 
-function renderContas(root) {
+async function renderContas(root) {
+  root.innerHTML = `
+    <div class="page-title">Contas de acesso</div>
+    <div class="page-sub">Usuários deste painel — somente o administrador (${ADMIN_EMAIL}) vê esta área</div>
+    <div class="empty" id="contasLoading"><span class="e-ico">⏳</span><b>Carregando contas…</b></div>`;
+
+  let users = [];
+  try {
+    const snap = await db.collection('users').get();
+    users = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+  } catch (e) {
+    root.innerHTML = '';
+    root.appendChild(el('div', 'empty', `<span class="e-ico">⚠️</span>
+      <b>Não foi possível carregar as contas</b>
+      Verifique sua conexão com a internet e tente novamente.`));
+    return;
+  }
+
+  // se o usuário já saiu dessa tela enquanto carregava, não faz nada
+  if (state.view !== 'contas') return;
   root.innerHTML = `
     <div class="page-title">Contas de acesso</div>
     <div class="page-sub">Usuários deste painel — somente o administrador (${ADMIN_EMAIL}) vê esta área</div>`;
 
-  const users = loadUsers();
   if (!users.length) {
     root.appendChild(el('div', 'empty', `<span class="e-ico">👤</span>
-      <b>Nenhuma conta criada neste navegador</b>
+      <b>Nenhuma conta criada ainda</b>
       Quando alguém criar uma conta pela tela de entrada, ela aparece aqui para você liberar ou bloquear.`));
     return;
   }
@@ -852,22 +908,30 @@ function renderContas(root) {
             : u.active
               ? '<span class="badge green">Ativa</span>'
               : '<span class="badge gold">Aguardando liberação</span>'}</td>
-          <td>${u.active ? '—' : `<span class="badge violet">${esc(u.code)}</span>`}</td>
-          <td><button class="btn ${u.blocked ? 'ghost' : 'danger'} small user-block" data-email="${esc(u.email)}">${u.blocked ? '🔓 Liberar' : '🔒 Bloquear'}</button></td>
+          <td>${u.active ? '—' : '<span class="badge violet">✉ enviado por e-mail</span>'}</td>
+          <td><button class="btn ${u.blocked ? 'ghost' : 'danger'} small user-block" data-uid="${esc(u.uid)}">${u.blocked ? '🔓 Liberar' : '🔒 Bloquear'}</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="hint" style="margin-top:12px">⚠️ As contas ficam salvas no navegador em que foram criadas. Contas criadas em outros computadores não aparecem aqui — a gestão central de todos os acessos exige o servidor (próxima etapa do produto). O bloqueio acima vale para este navegador.</p>`;
+    <p class="hint" style="margin-top:12px">☁️ Contas centralizadas na nuvem — o bloqueio vale instantaneamente em qualquer navegador ou dispositivo do cliente, sem precisar de novo deploy.</p>`;
   root.appendChild(tbl);
 
-  tbl.querySelectorAll('.user-block').forEach(b => b.onclick = () => {
-    const users2 = loadUsers();
-    const u = users2.find(x => x.email === b.dataset.email);
+  tbl.querySelectorAll('.user-block').forEach(b => b.onclick = async () => {
+    const u = users.find(x => x.uid === b.dataset.uid);
     if (!u) return;
-    u.blocked = !u.blocked;
-    saveUsers(users2);
-    renderContent();
-    toast(u.blocked ? `🔒 Acesso de ${u.nome} bloqueado` : `🔓 Acesso de ${u.nome} liberado`);
+    const novoStatus = !u.blocked;
+    b.disabled = true;
+    b.textContent = 'Aguarde…';
+    try {
+      await db.collection('users').doc(u.uid).update({ blocked: novoStatus });
+      u.blocked = novoStatus;
+      renderContent();
+      toast(novoStatus ? `🔒 Acesso de ${u.nome} bloqueado` : `🔓 Acesso de ${u.nome} liberado`);
+    } catch (e) {
+      toast('Não foi possível atualizar agora. Tente de novo.');
+      b.disabled = false;
+      b.textContent = u.blocked ? '🔓 Liberar' : '🔒 Bloquear';
+    }
   });
 }
 
@@ -1060,19 +1124,21 @@ document.addEventListener('keydown', e => {
    cliente → ele digita e o acesso abre.
    ═══════════════════════════════════════════ */
 
-const ADMIN_EMAIL = 'rocketadsmkt77@gmail.com'; // conta do administrador (embutida no código — funciona em qualquer máquina)
-const ADMIN_PASS  = '180207Ab';               // ⚠️ TROQUE esta senha antes de publicar
-const MASTER_CODE = 'RG-MASTER-7712';           // código mestre — só a equipe Rocket conhece
-const USERS_KEY = 'rocket_gestao_users_v1';
-const SESSION_KEY = 'rocket_gestao_session_v1';
+const ADMIN_EMAIL = 'rocketadsmkt77@gmail.com'; // conta do administrador (cadastrada no Firebase Authentication)
+// Impressão digital (SHA-256) do código mestre — o código em si NÃO aparece aqui
+// e não tem como ser descoberto a partir desta linha.
+const MASTER_HASH = '926cd8cf575178d3769fdef6c20e85c7aafdfcf43458f483fa59a7559b1ec84a';
+
+async function sha256(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 let currentUser = null;
+let currentUnsub = null; // listener em tempo real da própria conta (detecta bloqueio instantâneo)
 const isAdmin = () => !!(currentUser && currentUser.email === ADMIN_EMAIL);
 const adminUser = () => ({ nome: 'Rocket Ads', empresa: 'Administrador', email: ADMIN_EMAIL, active: true });
 
-function loadUsers() { try { return JSON.parse(localStorage.getItem(USERS_KEY)) || []; } catch (e) { return []; } }
-function saveUsers(u) { try { localStorage.setItem(USERS_KEY, JSON.stringify(u)); } catch (e) {} }
-function hashPass(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33) ^ s.charCodeAt(i); return (h >>> 0).toString(36); }
 function genCode() { return 'RG-' + String(Math.floor(100000 + Math.random() * 900000)); }
 
 let pendingUser = null;
@@ -1084,9 +1150,10 @@ function showPane(p) {
 }
 document.querySelectorAll('#authTabs button').forEach(b => b.onclick = () => showPane(b.dataset.pane));
 
-function enterApp(user) {
+async function enterApp(user) {
   currentUser = user;
-  try { localStorage.setItem(SESSION_KEY, user.email); } catch (e) {}
+  // carrega o painel desta conta na nuvem antes de abrir a tela
+  await carregarPainel(user.uid);
   $('#authScreen').hidden = true;
   $('#userName').textContent = user.nome;
   $('#userRole').textContent = user.empresa || 'Administrador';
@@ -1096,6 +1163,19 @@ function enterApp(user) {
   $('#navContas').hidden = !isAdmin();
   if (!isAdmin() && ['financas', 'contas'].includes(state.view)) state.view = 'client';
   renderAll();
+
+  // Fica ouvindo a própria conta: se o admin bloquear agora, derruba na hora.
+  if (currentUnsub) { currentUnsub(); currentUnsub = null; }
+  if (!isAdmin() && user.uid) {
+    currentUnsub = db.collection('users').doc(user.uid).onSnapshot(snap => {
+      const d = snap.data();
+      if (d && d.blocked) {
+        toast('🔒 Seu acesso foi bloqueado pela equipe Rocket Ads.');
+        if (currentUnsub) { currentUnsub(); currentUnsub = null; }
+        auth.signOut().finally(() => location.reload());
+      }
+    });
+  }
 }
 
 async function enviarSolicitacao(u) {
@@ -1143,48 +1223,74 @@ $('#signupBtn').onclick = async () => {
   msg.classList.remove('ok');
   if (!nome || !email || !email.includes('@')) { msg.textContent = 'Preencha seu nome e um e-mail válido.'; return; }
   if (pass.length < 6) { msg.textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
-  const users = loadUsers();
-  if (users.some(u => u.email === email)) { msg.textContent = 'Já existe uma conta com esse e-mail — use a aba "Entrar".'; return; }
 
-  const user = { nome, empresa, email, pass: hashPass(pass), code: genCode(), active: false, criada: new Date().toISOString() };
-  users.push(user);
-  saveUsers(users);
-  showPending(user);
+  msg.textContent = 'Criando conta…';
+  $('#signupBtn').disabled = true;
   try {
-    await enviarSolicitacao(user);
-    $('#pendingText').innerHTML = 'Sua solicitação foi enviada à equipe <b>Rocket Ads</b>. Assim que for aprovada, você receberá o <b>código de liberação</b> — digite-o abaixo para entrar.';
+    const cred = await auth.createUserWithEmailAndPassword(email, pass);
+    const uid = cred.user.uid;
+    const code = genCode();
+    // no banco fica só a impressão digital do código — o código legível vai apenas no e-mail do admin
+    const dados = { nome, empresa, email, codeHash: await sha256(code), active: false, blocked: false, criada: new Date().toISOString() };
+    await db.collection('users').doc(uid).set(dados);
+    const user = { uid, ...dados };
+    showPending(user);
+    try {
+      await enviarSolicitacao({ ...user, code });
+      $('#pendingText').innerHTML = 'Sua solicitação foi enviada à equipe <b>Rocket Ads</b>. Assim que for aprovada, você receberá o <b>código de liberação</b> — digite-o abaixo para entrar.';
+    } catch (e) {
+      $('#pendingText').innerHTML = 'Não foi possível enviar a solicitação automaticamente. Clique em <b>Falar com o suporte</b> abaixo para pedir seu código de liberação.';
+    }
   } catch (e) {
-    $('#pendingText').innerHTML = 'Não foi possível enviar a solicitação automaticamente. Clique em <b>Falar com o suporte</b> abaixo para pedir seu código de liberação.';
+    if (e.code === 'auth/email-already-in-use') msg.textContent = 'Já existe uma conta com esse e-mail — use a aba "Entrar".';
+    else if (e.code === 'auth/invalid-email') msg.textContent = 'E-mail inválido.';
+    else msg.textContent = 'Não foi possível criar a conta agora. Tente novamente.';
+  } finally {
+    $('#signupBtn').disabled = false;
   }
 };
 
-$('#loginBtn').onclick = () => {
+$('#loginBtn').onclick = async () => {
   const email = $('#loginEmail').value.trim().toLowerCase();
   const pass = $('#loginPass').value;
   const msg = $('#loginMsg');
-  // conta do administrador — embutida no código, funciona em qualquer máquina
-  if (email === ADMIN_EMAIL && pass === ADMIN_PASS) { enterApp(adminUser()); return; }
-  const user = loadUsers().find(u => u.email === email);
-  if (!user || user.pass !== hashPass(pass)) { msg.textContent = 'E-mail ou senha incorretos.'; return; }
-  if (user.blocked) { msg.textContent = 'Acesso suspenso. Fale com a equipe Rocket Ads para regularizar.'; return; }
-  if (!user.active) { showPending(user); return; }
-  enterApp(user);
+  msg.textContent = 'Entrando…';
+  $('#loginBtn').disabled = true;
+  try {
+    const cred = await auth.signInWithEmailAndPassword(email, pass);
+    if (email === ADMIN_EMAIL) { await enterApp({ ...adminUser(), uid: cred.user.uid }); return; }
+    const snap = await db.collection('users').doc(cred.user.uid).get();
+    if (!snap.exists) { msg.textContent = 'Conta não encontrada. Fale com o suporte.'; await auth.signOut(); return; }
+    const user = { uid: cred.user.uid, ...snap.data() };
+    if (user.blocked) { msg.textContent = 'Acesso suspenso. Fale com a equipe Rocket Ads para regularizar.'; await auth.signOut(); return; }
+    if (!user.active) { showPending(user); return; }
+    msg.textContent = '';
+    enterApp(user);
+  } catch (e) {
+    msg.textContent = 'E-mail ou senha incorretos.';
+  } finally {
+    $('#loginBtn').disabled = false;
+  }
 };
 
-$('#unlockBtn').onclick = () => {
+$('#unlockBtn').onclick = async () => {
   const code = $('#unlockCode').value.trim().toUpperCase();
   if (!pendingUser) { showPane('login'); return; }
-  if (code && (code === pendingUser.code.toUpperCase() || code === MASTER_CODE.toUpperCase())) {
-    const users = loadUsers();
-    const u = users.find(x => x.email === pendingUser.email);
-    if (u) {
-      u.active = true;
-      saveUsers(users);
-      enterApp(u);
-      toast('Acesso liberado — bem-vindo ao Rocket Gestão! 🚀');
-    }
-  } else {
+  const digitada = code ? await sha256(code) : '';
+  if (!(digitada && (digitada === pendingUser.codeHash || digitada === MASTER_HASH))) {
     $('#unlockMsg').textContent = 'Código inválido. Confira o código enviado pela equipe Rocket Ads.';
+    return;
+  }
+  $('#unlockBtn').disabled = true;
+  try {
+    await db.collection('users').doc(pendingUser.uid).update({ active: true });
+    const user = { ...pendingUser, active: true };
+    enterApp(user);
+    toast('Acesso liberado — bem-vindo ao Rocket Gestão! 🚀');
+  } catch (e) {
+    $('#unlockMsg').textContent = 'Não foi possível liberar agora. Tente novamente em instantes.';
+  } finally {
+    $('#unlockBtn').disabled = false;
   }
 };
 
@@ -1193,18 +1299,31 @@ $('#unlockBtn').onclick = () => {
 });
 
 $('#logoutBtn').onclick = () => {
-  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
-  location.reload();
+  if (currentUnsub) { currentUnsub(); currentUnsub = null; }
+  auth.signOut().finally(() => location.reload());
 };
 
 /* ── INIT ──────────────────────────────── */
 
-(function initAuth() {
-  let sessionEmail = null;
-  try { sessionEmail = localStorage.getItem(SESSION_KEY); } catch (e) {}
-  if (sessionEmail === ADMIN_EMAIL) { enterApp(adminUser()); return; }
-  const user = sessionEmail ? loadUsers().find(u => u.email === sessionEmail && u.active && !u.blocked) : null;
-  if (user) enterApp(user);
-  else $('#authScreen').hidden = false;
-})();
+auth.onAuthStateChanged(async (fbUser) => {
+  if (!fbUser) { $('#authScreen').hidden = false; return; }
+  if (fbUser.email === ADMIN_EMAIL) { await enterApp({ ...adminUser(), uid: fbUser.uid }); return; }
+  try {
+    const snap = await db.collection('users').doc(fbUser.uid).get();
+    if (!snap.exists) { $('#authScreen').hidden = false; return; }
+    const data = snap.data();
+    const user = { uid: fbUser.uid, ...data };
+    if (data.blocked) {
+      await auth.signOut();
+      $('#authScreen').hidden = false;
+      showPane('login');
+      $('#loginMsg').textContent = 'Acesso suspenso. Fale com a equipe Rocket Ads para regularizar.';
+      return;
+    }
+    if (!data.active) { showPending(user); return; }
+    enterApp(user);
+  } catch (e) {
+    $('#authScreen').hidden = false;
+  }
+});
 

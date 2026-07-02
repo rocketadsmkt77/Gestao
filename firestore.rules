@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      // Qualquer usuário autenticado lê seu próprio documento.
+      // O admin lê todos.
+      allow read: if request.auth != null &&
+                     (request.auth.uid == userId ||
+                      request.auth.token.email == 'rocketadsmkt77@gmail.com');
+
+      // Um usuário pode criar seu próprio documento no cadastro,
+      // mas ele sempre nasce bloqueado/inativo — não dá para burlar isso.
+      allow create: if request.auth != null &&
+                       request.auth.uid == userId &&
+                       request.resource.data.active == false &&
+                       request.resource.data.blocked == false;
+
+      // O admin pode atualizar qualquer campo de qualquer usuário
+      // (bloquear, liberar, etc). O próprio usuário só pode "destravar"
+      // a conta (active: false -> true) usando o código que recebeu —
+      // não pode alterar mais nada, nem se desbloquear sozinho.
+      allow update: if request.auth != null && (
+        request.auth.token.email == 'rocketadsmkt77@gmail.com'
+        ||
+        (
+          request.auth.uid == userId &&
+          resource.data.blocked == false &&
+          resource.data.active == false &&
+          request.resource.data.active == true &&
+          request.resource.data.blocked == false &&
+          request.resource.data.codeHash  == resource.data.codeHash &&
+          request.resource.data.nome      == resource.data.nome &&
+          request.resource.data.empresa   == resource.data.empresa &&
+          request.resource.data.email     == resource.data.email
+        )
+      );
+
+      allow delete: if request.auth != null &&
+                       request.auth.token.email == 'rocketadsmkt77@gmail.com';
+    }
+
+    // Painel de cada conta (clientes, tarefas, reuniões, conversas):
+    // cada usuário lê e grava somente o próprio painel; o admin acessa todos.
+    match /paineis/{userId} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == userId ||
+         request.auth.token.email == 'rocketadsmkt77@gmail.com');
+    }
+  }
+}
